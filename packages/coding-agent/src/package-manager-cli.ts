@@ -506,6 +506,7 @@ async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
 		await new Promise<void>((resolve, reject) => {
 			const child = spawnProcess(step.command, step.args, {
 				stdio: "inherit",
+				...(step.cwd ? { cwd: step.cwd } : {}),
 			});
 			child.on("error", (error) => {
 				reject(error);

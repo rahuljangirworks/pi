@@ -26,12 +26,13 @@ export const isBunRuntime = !!process.versions.bun;
 // Install Method Detection
 // =============================================================================
 
-export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "unknown";
+export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "source" | "unknown";
 
 interface SelfUpdateCommandStep {
 	command: string;
 	args: string[];
 	display: string;
+	cwd?: string;
 }
 
 export interface SelfUpdateCommand extends SelfUpdateCommandStep {
@@ -62,12 +63,29 @@ function makeSelfUpdateCommand(
 	};
 }
 
-function makeSelfUpdateCommandStep(command: string, args: string[]): SelfUpdateCommandStep {
+function makeSelfUpdateCommandStep(command: string, args: string[], cwd?: string): SelfUpdateCommandStep {
 	return {
 		command,
 		args,
 		display: [command, ...args].map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)).join(" "),
+		...(cwd ? { cwd } : {}),
 	};
+}
+
+function findGitRoot(): string {
+	const pkgDir = getPackageDir();
+	let dir = pkgDir;
+	while (dir !== dirname(dir)) {
+		if (existsSync(join(dir, ".git"))) {
+			return dir;
+		}
+		dir = dirname(dir);
+	}
+	return pkgDir;
+}
+
+function isSourceCheckout(): boolean {
+	return existsSync(join(findGitRoot(), ".git"));
 }
 
 export function detectInstallMethod(): InstallMethod {
@@ -88,6 +106,9 @@ export function detectInstallMethod(): InstallMethod {
 	}
 	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
 		return "npm";
+	}
+	if (isSourceCheckout()) {
+		return "source";
 	}
 
 	return "unknown";
@@ -181,6 +202,18 @@ function getSelfUpdateCommandForMethod(
 					: makeSelfUpdateCommandStep(command, [...prefixArgs, "uninstall", "-g", installedPackageName]);
 			return makeSelfUpdateCommand(installStep, uninstallStep);
 		}
+		case "source": {
+			const gitRoot = findGitRoot();
+			return {
+				...makeSelfUpdateCommandStep("git", ["fetch", "upstream"], gitRoot),
+				steps: [
+					makeSelfUpdateCommandStep("git", ["stash"], gitRoot),
+					makeSelfUpdateCommandStep("git", ["fetch", "upstream"], gitRoot),
+					makeSelfUpdateCommandStep("git", ["merge", "upstream/main"], gitRoot),
+					makeSelfUpdateCommandStep("git", ["stash", "pop"], gitRoot),
+				],
+			};
+		}
 		case "unknown":
 			return undefined;
 	}
@@ -243,6 +276,7 @@ function getGlobalPackageRoots(method: InstallMethod, _packageName: string, npmC
 			return roots;
 		}
 		case "bun-binary":
+		case "source":
 		case "unknown":
 			return [];
 	}
@@ -319,7 +353,14 @@ export function getSelfUpdateCommand(
 ): SelfUpdateCommand | undefined {
 	const method = detectInstallMethod();
 	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageTarget, npmCommand);
-	if (!command || !isManagedByGlobalPackageManager(method, packageName, npmCommand) || !isSelfUpdatePathWritable()) {
+	if (!command) {
+		return undefined;
+	}
+	// Source checkouts can always self-update
+	if (method === "source") {
+		return command;
+	}
+	if (!isManagedByGlobalPackageManager(method, packageName, npmCommand) || !isSelfUpdatePathWritable()) {
 		return undefined;
 	}
 	return command;
@@ -334,6 +375,9 @@ export function getSelfUpdateUnavailableInstruction(
 	const target = normalizeSelfUpdatePackageTarget(updatePackageTarget);
 	if (method === "bun-binary") {
 		return `Download from: https://github.com/earendil-works/pi-mono/releases/latest`;
+	}
+	if (method === "source") {
+		return `Run 'git fetch upstream && git merge upstream/main' in the source repository to update.`;
 	}
 	const command = getSelfUpdateCommandForMethod(method, packageName, target, npmCommand);
 	if (command) {
@@ -486,8 +530,8 @@ try {
 
 const piConfigName: string | undefined = pkg.piConfig?.name;
 export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent";
-export const APP_NAME: string = piConfigName || "pi";
-export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
+export const APP_NAME: string = piConfigName || "haraka";
+export const APP_TITLE: string = piConfigName ? APP_NAME : "haraka";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
 export const VERSION: string = pkg.version || "0.0.0";
 
