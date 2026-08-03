@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getModel } from "../src/models.ts";
-import { complete, stream } from "../src/stream.ts";
+import { complete, getModel, stream } from "../src/compat.ts";
 import type { Api, Context, Model, StreamOptions } from "../src/types.ts";
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
@@ -190,6 +189,18 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.BASETEN_API_KEY)("Baseten Provider Abort", () => {
+		const llm = getModel("baseten", "zai-org/GLM-5.2");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm, { reasoningEffort: "high" });
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm, { reasoningEffort: "high" });
+		});
+	});
+
 	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider Abort", () => {
 		const llm = getModel("minimax", "MiniMax-M2.7");
 
@@ -250,8 +261,32 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.QWEN_TOKEN_PLAN_API_KEY)("Qwen Token Plan Provider Abort", () => {
+		const llm = getModel("qwen-token-plan", "qwen3.7-max");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm);
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.QWEN_TOKEN_PLAN_CN_API_KEY)("Qwen Token Plan (CN) Provider Abort", () => {
+		const llm = getModel("qwen-token-plan-cn", "qwen3.7-max");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm);
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+	});
+
 	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider Abort", () => {
-		const llm = getModel("kimi-coding", "kimi-k2-thinking");
+		const llm = getModel("kimi-coding", "kimi-for-coding");
 
 		it("should abort mid-stream", { retry: 3 }, async () => {
 			await testAbortSignal(llm);
